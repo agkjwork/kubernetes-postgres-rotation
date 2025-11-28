@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: alembic-migration-job
+spec:
+  template:
+    spec:
+      containers:
+        - name: backend
+          image: your-backend-image:latest  # Backend image with Alembic scripts
+          env:
+            - name: DATABASE_URL
+              value: "postgresql+psycopg2://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@postgres-service:5432/{{ .Values.postgres.database }}"
+            - name: POSTGRES_HOST
+              value: "postgres-service.default.svc.cluster.local"  # Postgres service name
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PORT
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_DB
+          command: ["sh", "-c", "alembic upgrade head && exit 0"]  # Run migrations and exit
+      restartPolicy: Never  # Ensure the job doesn't restart
+  backoffLimit: 4  # If the job fails, retry up to 4 times
