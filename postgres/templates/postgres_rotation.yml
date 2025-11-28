@@ -28,8 +28,38 @@ spec:
           valueFrom:
             secretKeyRef:
               name: postgres-secret
-              key: POSTGRES_DB    
-        command: ["sh", "-c", "psql -h $POSTGRES_HOST -U $POSTGRES_USER -p $POSTGRES_PORT -c \"ALTER USER $POSTGRES_USER WITH PASSWORD '$POSTGRES_PASSWORD';\""]
+              key: POSTGRES_DB  
+        - name: POSTGRES_PORT
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PORT
+        - name: POSTGRES_HOST
+          value: "postgres-service.default.svc.cluster.local"
+
+        # REQUIRED for psql authentication
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+
+        command:
+          - "sh"
+          - "-c"
+          - |
+            echo 'Running password rotation...'
+            echo "User: $POSTGRES_USER"
+            echo "Host: $POSTGRES_HOST"
+            echo "Port: $POSTGRES_PORT"
+            echo "Password: $POSTGRES_PASSWORD"
+
+            psql \
+              -h "$POSTGRES_HOST" \
+              -p "$POSTGRES_PORT" \
+              -U "$POSTGRES_USER" \
+              -d "$POSTGRES_DB" \
+              -c "ALTER USER $POSTGRES_USER WITH PASSWORD '$POSTGRES_PASSWORD';"
       restartPolicy: OnFailure
-  backoffLimit: 3
+  backoffLimit: 7
   ttlSecondsAfterFinished: 30
