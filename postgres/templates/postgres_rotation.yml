@@ -28,7 +28,12 @@ spec:
           valueFrom:
             secretKeyRef:
               name: postgres-secret
-              key: POSTGRES_DB    
+              key: POSTGRES_DB
+        - name: POSTGRES_PORT
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PORT        
         command: ["sh", "-c", "psql -h $POSTGRES_HOST -U $POSTGRES_USER -p $POSTGRES_PORT -c \"ALTER USER $POSTGRES_USER WITH PASSWORD '$POSTGRES_PASSWORD';\""]
       restartPolicy: OnFailure
   backoffLimit: 3

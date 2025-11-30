@@ -47,11 +47,12 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-data-pvc
-  namespace: default  # Make sure it is in the right namespace
+  namespace: default
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
       storage: 1Gi  # Make sure this matches the PV's capacity
+  volumeName: postgres-pv  # Explicitly bind to the existing PV
   storageClassName: standard  # Ensure this matches the PV's StorageClass
