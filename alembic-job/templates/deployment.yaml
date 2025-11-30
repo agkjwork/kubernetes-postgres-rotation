@@ -7,7 +7,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: your-backend-image:latest  # Backend image with Alembic scripts
+          image: agkj/public-api-test:latest  # Backend image with Alembic scripts
           env:
             - name: DATABASE_URL
               value: "postgresql+psycopg2://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@postgres-service:5432/{{ .Values.postgres.database }}"

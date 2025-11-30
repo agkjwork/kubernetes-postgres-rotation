@@ -44,20 +44,6 @@ spec:
             claimName: postgres-data-pvc
 ---
 apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: my-pv
-spec:
-  capacity:
-    storage: 1Gi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: standard
-  hostPath:
-    path: "/mnt/data"
----
-apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: postgres-data-pvc
@@ -68,4 +54,4 @@ spec:
   resources:
     requests:
       storage: 1Gi  # Make sure this matches the PV's capacity
-  storageClassName: standard  # Ensure this matches the PV's StorageClass
+  storageClassName: ""  # Ensure this matches the PV's StorageClass
