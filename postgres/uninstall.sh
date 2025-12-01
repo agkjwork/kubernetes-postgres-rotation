@@ -1,1 +1,0 @@
-helm uninstall postgres-release 
