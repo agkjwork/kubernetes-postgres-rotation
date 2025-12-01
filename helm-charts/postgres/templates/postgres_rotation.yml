@@ -62,4 +62,4 @@ spec:
               -c "ALTER USER $POSTGRES_USER WITH PASSWORD '$POSTGRES_PASSWORD';"
       restartPolicy: OnFailure
   backoffLimit: 7
-  ttlSecondsAfterFinished: 30
+  #ttlSecondsAfterFinished: 30
