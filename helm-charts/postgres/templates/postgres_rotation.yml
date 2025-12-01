@@ -1,0 +1,65 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: password-rotation
+  labels:
+    app.kubernetes.io/managed-by: Helm
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      containers:
+      - name: postgres-password-rotation
+        image: postgres:latest
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_DB  
+        - name: POSTGRES_PORT
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PORT
+        - name: POSTGRES_HOST
+          value: "postgres-service.default.svc.cluster.local"
+
+        # REQUIRED for psql authentication
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+
+        command:
+          - "sh"
+          - "-c"
+          - |
+            echo 'Running password rotation...'
+            echo "User: $POSTGRES_USER"
+            echo "Host: $POSTGRES_HOST"
+            echo "Port: $POSTGRES_PORT"
+            echo "Password: $POSTGRES_PASSWORD"
+
+            psql \
+              -h "$POSTGRES_HOST" \
+              -p "$POSTGRES_PORT" \
+              -U "$POSTGRES_USER" \
+              -d "$POSTGRES_DB" \
+              -c "ALTER USER $POSTGRES_USER WITH PASSWORD '$POSTGRES_PASSWORD';"
+      restartPolicy: OnFailure
+  backoffLimit: 7
+  ttlSecondsAfterFinished: 30

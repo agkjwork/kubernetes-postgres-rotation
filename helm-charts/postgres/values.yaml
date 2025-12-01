@@ -1,0 +1,8 @@
+service:
+  port: 5432
+
+postgres:
+  user: admin
+  password: admin
+  database: my_db
+  port: 5432

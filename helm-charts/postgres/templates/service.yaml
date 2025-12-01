@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+spec:
+  selector:
+    app: postgres-pod  # Should match the label of your Postgres Deployment pod
+  ports:
+    - protocol: TCP
+      port: 5432         # The port Postgres is listening on in the container
+      targetPort: 5432   # The port Postgres is listening on inside the container
+  
