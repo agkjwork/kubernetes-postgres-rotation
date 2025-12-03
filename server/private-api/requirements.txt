@@ -1,3 +1,6 @@
 alembic
 psycopg2-binary
 sqlalchemy
+uvicorn[standard]
+Fastapi
+asyncpg

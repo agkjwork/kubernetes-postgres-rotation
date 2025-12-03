@@ -17,4 +17,6 @@ COPY migrations/ migrations/
 COPY . .
 # Set the default entry point to the alembic command
 #ENTRYPOINT ["alembic"]
-CMD ["python3", "main.py"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+#CMD ["python3", "main.py"]

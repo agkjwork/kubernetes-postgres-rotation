@@ -6,3 +6,4 @@ postgres:
   password: admin
   database: my_db
   port: 5432
+

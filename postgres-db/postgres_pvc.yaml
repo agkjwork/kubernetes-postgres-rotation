@@ -9,5 +9,5 @@ spec:
   resources:
     requests:
       storage: 1Gi  # Make sure this matches the PV's capacity
-  volumeName: postgres-pv  # Explicitly bind to the existing PV
-  storageClassName: standard  # Ensure this matches the PV's StorageClass
+  #volumeName: postgres-pv  # Explicitly bind to the existing PV
+  #storageClassName: standard  # Ensure this matches the PV's StorageClass

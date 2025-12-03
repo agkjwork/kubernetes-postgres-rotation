@@ -38,4 +38,6 @@ spec:
                 secretKeyRef:
                   name: postgres-secret
                   key: POSTGRES_DB
+            - name: ADVISORY_LOCK
+              value: "12345"
       restartPolicy: Always
