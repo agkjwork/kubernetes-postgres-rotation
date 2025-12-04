@@ -5,7 +5,7 @@ from functools import partial
 import psycopg2
 import psycopg2.extras
 from src.alembic_migrations import run_migrations
-
+import time
 app = FastAPI()
 
 POSTGRES_PASSWORD = os.environ["POSTGRES_PASSWORD"]
@@ -40,8 +40,6 @@ def is_flag_set(conn, flagname: str) -> bool:
         row = cur.fetchone()
         return row is not None and row[0] is True
 
-
-
 def set_flag(conn, flagname: str):
     with conn.cursor() as cur:
         cur.execute("""
@@ -69,6 +67,11 @@ async def run_sync(fn, *args):
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, partial(fn, *args))
 
+def try_acquire_lock(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_try_advisory_lock(%s)", (ADVISORY_LOCK,))
+        return cur.fetchone()[0]
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -76,11 +79,16 @@ async def startup_event():
     conn = await run_sync(get_conn)
 
     # Acquire lock (sync)
-    await run_sync(acquire_lock, conn)
+    while True:
+        got_lock = await run_sync(try_acquire_lock, conn)
+        if got_lock:
+            break
+        print("attempting to acquire lock...")
+        await asyncio.sleep(1)
 
     ensure_bootstrap_table(conn)
     try:
-        # Everything in here can be fully synchronous
+        
         if not is_flag_set(conn, "migrations_bootstrapped"):
             run_migrations()
             print(f"alembic bootstrapping", flush=True)
@@ -106,18 +114,5 @@ async def startup_event():
         # Release lock (sync)
         await run_sync(release_lock, conn)
         conn.close()
+        print("BOOTSTRAPPING COMPLETED")
 
-
-def bootstrap_all(conn):
-    if not is_flag_set(conn, "migrations_bootstrapped"):
-        run_migrations()
-        print(f"alembic bootstrapped")
-        set_flag(conn, "migrations_bootstrapped")
-
-    if not is_flag_set(conn, "keycloak_bootstrapped"):
-        print(f"keycloak bootstrapped")
-        set_flag(conn, "keycloak_bootstrapped")
-
-    if not is_flag_set(conn, "vault_bootstrapped"):
-        print(f"vault bootstrapped")
-        set_flag(conn, "vault_bootstrapped")
