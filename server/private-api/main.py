@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 import os
-import asyncpg
 import asyncio
 from functools import partial
+import psycopg2
+import psycopg2.extras
 from src.alembic_migrations import run_migrations
 
 app = FastAPI()
@@ -12,80 +13,111 @@ POSTGRES_USER = os.environ["POSTGRES_USER"]
 POSTGRES_PORT = os.environ["POSTGRES_PORT"]
 POSTGRES_DB = os.environ["POSTGRES_DB"]
 POSTGRES_HOST = os.environ["POSTGRES_HOST"]
-ADVISORY_LOCK =os.environ["ADVISORY_LOCK"]
+ADVISORY_LOCK = int(os.environ["ADVISORY_LOCK"])
 
-# asyncpg requires a non-sqlalchemy DSN
-ASYNC_DSN = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
-
-
-# -------------------------------------------------------------------
-# Helpers for bootstrap flags
-# -------------------------------------------------------------------
-async def is_flag_set(conn, flagname: str) -> bool:
-    row = await conn.fetchrow(
-    "SELECT flag_set FROM bootstrap_flags WHERE flag_name = $1",
-    flagname
-    )
-    return row and row["flag_set"] is True
+DSN = f"dbname={POSTGRES_DB} user={POSTGRES_USER} password={POSTGRES_PASSWORD} host={POSTGRES_HOST} port={POSTGRES_PORT}"
 
 
-async def set_flag(conn, flagname: str):
-    await conn.execute(
-    """
-    INSERT INTO bootstrap_flags(flag_name, flag_set)
-    VALUES ($1, TRUE)
-    ON CONFLICT (flag_name)
-    DO UPDATE SET flag_set = EXCLUDED.flag_set
-    """,
-    flagname
-    )
+def get_conn():
+    return psycopg2.connect(DSN, cursor_factory=psycopg2.extras.DictCursor)
 
 
-# -------------------------------------------------------------------
-# Async wrapper for alembic (runs blocking code in a thread)
-# -------------------------------------------------------------------
-async def run_migrations_async():
+def ensure_bootstrap_table(conn):
+    
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS bootstrap_flags (
+                flag_name TEXT PRIMARY KEY,
+                flag_set BOOLEAN NOT NULL
+            )
+        """)
+    conn.commit()
+
+
+def is_flag_set(conn, flagname: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT flag_set FROM bootstrap_flags WHERE flag_name = %s", (flagname,))
+        row = cur.fetchone()
+        return row is not None and row[0] is True
+
+
+
+def set_flag(conn, flagname: str):
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO bootstrap_flags(flag_name, flag_set)
+            VALUES (%s, TRUE)
+            ON CONFLICT (flag_name)
+            DO UPDATE SET flag_set = EXCLUDED.flag_set
+        """, (flagname,))
+    conn.commit()
+
+
+def acquire_lock(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_lock(%s)", (ADVISORY_LOCK,))
+    conn.commit()
+
+
+def release_lock(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_unlock(%s)", (ADVISORY_LOCK,))
+    conn.commit()
+
+
+async def run_sync(fn, *args):
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, run_migrations)
+    return await loop.run_in_executor(None, partial(fn, *args))
 
 
-# -------------------------------------------------------------------
-# Startup Event
-# -------------------------------------------------------------------
 @app.on_event("startup")
 async def startup_event():
-    conn = await asyncpg.connect(ASYNC_DSN)
 
-    # Acquire advisory lock (blocks until lock is free)
-    await conn.execute("SELECT pg_advisory_lock($1)",int(ADVISORY_LOCK))
+    conn = await run_sync(get_conn)
 
-    # Ensure flags table exists
-    await conn.execute("""
-    CREATE TABLE IF NOT EXISTS bootstrap_flags (
-    flag_name TEXT PRIMARY KEY,
-    flag_set BOOLEAN NOT NULL
-    );
-    """)    
+    # Acquire lock (sync)
+    await run_sync(acquire_lock, conn)
 
+    ensure_bootstrap_table(conn)
     try:
-        if not await is_flag_set(conn, "migrations_bootstrapped"):
-            await run_migrations_async()
-            print("boostrapping alembic")
-            await set_flag(conn, "migrations_bootstrapped")
-        # KEYCLOAK BOOTSTRAP
-        if not await is_flag_set(conn, "keycloak_bootstrapped"):
-            print("boostrapping keycloak")
-            await set_flag(conn, "keycloak_bootstrapped")
+        # Everything in here can be fully synchronous
+        if not is_flag_set(conn, "migrations_bootstrapped"):
+            run_migrations()
+            print(f"alembic bootstrapping", flush=True)
+            set_flag(conn, "migrations_bootstrapped")
+        else:
+            print(f"alembic bootstrapped already: {is_flag_set(conn, 'migrations_bootstrapped')}", flush=True)
 
-        # VAULT BOOTSTRAP
-        if not await is_flag_set(conn, "vault_bootstrapped"):
-            print("boostrapping vault")
-            await set_flag(conn, "vault_bootstrapped")
+        if not is_flag_set(conn, "keycloak_bootstrapped"):
+            print(f"keycloak bootstrapping", flush=True)
+            set_flag(conn, "keycloak_bootstrapped")
+        else:
+            print(f"keycloak bootstrapped already: {is_flag_set(conn, 'keycloak_bootstrapped')}", flush=True)
 
-        # ALEMBIC MIGRATIONS
+        if not is_flag_set(conn, "vault_bootstrapped"):
+            print(f"vault bootstrapping", flush=True)
+            set_flag(conn, "vault_bootstrapped")
+        else:
+            print(f"vault bootstrapped already: {is_flag_set(conn, 'vault_bootstrapped')}", flush=True)
+        
         
 
     finally:
-        # Release advisory lock
-        await conn.execute("SELECT pg_advisory_unlock($1)",int(ADVISORY_LOCK))
-        await conn.close()
+        # Release lock (sync)
+        await run_sync(release_lock, conn)
+        conn.close()
+
+
+def bootstrap_all(conn):
+    if not is_flag_set(conn, "migrations_bootstrapped"):
+        run_migrations()
+        print(f"alembic bootstrapped")
+        set_flag(conn, "migrations_bootstrapped")
+
+    if not is_flag_set(conn, "keycloak_bootstrapped"):
+        print(f"keycloak bootstrapped")
+        set_flag(conn, "keycloak_bootstrapped")
+
+    if not is_flag_set(conn, "vault_bootstrapped"):
+        print(f"vault bootstrapped")
+        set_flag(conn, "vault_bootstrapped")
