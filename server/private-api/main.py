@@ -50,6 +50,14 @@ SCEHMA_MIGRATION_TYPE="upgrade"
 SCHEMA_MIGRATION_VERSION="head"
 
 
+
+
+# versions of keycloak, vault and postgres is tagged to a image version
+# first check migration version in the db
+# if migration version in db is < current version
+# upgrade 
+# check if fail, to rollback helm 
+
 def create_service_version_table(conn):
     # first check if table exists
     # if table does not exists,create it 
@@ -57,7 +65,8 @@ def create_service_version_table(conn):
         cur.execute("""
             CREATE TABLE IF NOT EXISTS service (
             service_name VARCHAR(25) PRIMARY KEY,
-            service_version VARCHAR(10) NULL);
+            service_version VARCHAR(10) NULL,
+            last_updated_at TIMESTAMP NOT NULL DEFAULT NOW());
         """)
     conn.commit()
 
@@ -85,11 +94,11 @@ def find_service_version_by_service_name(conn, service_name: str) -> int | None:
         return cur.fetchone()[0]  # Could be None
    
 
-def set_service_version_by_service_name(conn, service_name: str, service_version: str) -> None:
+def update_service_version_by_service_name(conn, service_name: str, service_version: str) -> None:
     with conn.cursor() as cur:
         cur.execute("""
             UPDATE service
-            SET service_version = %s
+            SET service_version = %s, last_updated_at = NOW()
             WHERE service_name = %s
         """, (service_version, service_name,))
         if cur.rowcount == 0:
@@ -102,7 +111,7 @@ def upgrade_vault(conn) -> None:
         vault_version = find_service_version_by_service_name(conn,"vault")
         if vault_version is None:
             print("upgrade vault from None to 0.0.0", flush=True)
-            set_service_version_by_service_name(conn, "vault", "0.0.0")
+            update_service_version_by_service_name(conn, "vault", "0.0.0")
             continue
 
         if vault_version == VAULT_VERSION:
@@ -111,14 +120,14 @@ def upgrade_vault(conn) -> None:
 
         if vault_version == "0.0.0":
             print("upgrading vault from 0.0.0 to 0.1.0", flush=True)
-            set_service_version_by_service_name(conn, "vault", "0.1.0")
+            update_service_version_by_service_name(conn, "vault", "0.1.0")
 
 def upgrade_keycloak(conn) -> None:
     while True:
         keycloak_version = find_service_version_by_service_name(conn,"keycloak")
         if keycloak_version is None:
             print("upgrade vault from None to 0.0.0", flush=True)
-            set_service_version_by_service_name(conn, "keycloak", "0.0.0")
+            update_service_version_by_service_name(conn, "keycloak", "0.0.0")
             continue
 
         if keycloak_version == KEYCLOAK_VERSION:
@@ -127,7 +136,7 @@ def upgrade_keycloak(conn) -> None:
 
         if keycloak_version == "0.0.0":
             print("upgrading keycloak from 0.0.0 to 0.1.0", flush=True)
-            set_service_version_by_service_name(conn, "keycloak", "0.1.0")
+            update_service_version_by_service_name(conn, "keycloak", "0.1.0")
 
 def upgrade_schema(conn) -> None:
     while True:
@@ -135,7 +144,7 @@ def upgrade_schema(conn) -> None:
         if schema_version is None:
             print(f"{SCEHMA_MIGRATION_TYPE} schema from None to 0.0.0", flush=True)
             run_migrations(SCEHMA_MIGRATION_TYPE, SCHEMA_MIGRATION_VERSION)
-            set_service_version_by_service_name(conn, "schema", "0.0.0")
+            update_service_version_by_service_name(conn, "schema", "0.0.0")
             continue
 
         if schema_version == SCHEMA_VERSION:
@@ -144,9 +153,10 @@ def upgrade_schema(conn) -> None:
 
         if schema_version == "0.0.0":
             print(f"{SCEHMA_MIGRATION_TYPE} schema from 0.0.0 to 0.1.0", flush=True)
-            set_service_version_by_service_name(conn, "schema", "0.1.0")
-            
+            update_service_version_by_service_name(conn, "schema", "0.1.0")
 
+
+# prevent this from auto starting up 
 @app.on_event("startup")
 async def startup_event():
 
@@ -154,7 +164,6 @@ async def startup_event():
         # create connection
         conn = await run_sync(get_conn)
         conn.autocommit = True
-
         # Acquire lock (sync)
         while True:
             got_lock = await run_sync(try_acquire_lock, conn)
@@ -164,32 +173,16 @@ async def startup_event():
             await asyncio.sleep(1)
 
         create_service_version_table(conn)
-        #ensure_bootstrap_table(conn)
-
-
-        # ------------------------------
-        # |service_name|service_version|
-        # ------------------------------
-        # |   schema   |      0        |
-        # |   keycloak |      0        |
-        # |   vault    |      0        |
-        # ------------------------------
-
-        # versions of keycloak, vault and postgres is tagged to a image version
-        # first check migration version in the db
-        # if migration version in db is < current version
-        # upgrade 
-        # check if fail, to rollback helm 
         upgrade_vault(conn)
         upgrade_keycloak(conn)
         upgrade_schema(conn)
 
-
-
     finally:
         # Release lock (sync)
-        print("UPGRADING COMPLETED",flush=True)
+        print("Lock released",flush=True)
         await run_sync(release_lock, conn)
         conn.close()
-        
 
+@app.on_event("startup")     
+async def startup_event():
+    print(f"OMG WHAT IS HAPPENING")
