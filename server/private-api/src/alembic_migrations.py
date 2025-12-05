@@ -4,11 +4,13 @@ import os
 from alembic.config import Config
 from alembic import command
 
-def run_migrations():
+def run_migrations(schema_migration_type: str, schema_migration_version: str):
     alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "../alembic.ini"))
     
     # Optional: set the database URL dynamically
     # alembic_cfg.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
-
-    command.upgrade(alembic_cfg, "head")
+    if schema_migration_type == "upgrade":
+        command.upgrade(alembic_cfg, schema_migration_version)
+    elif schema_migration_type == "downgrade":
+        command.downgrade(alembic_cfg, schema_migration_version)
 
