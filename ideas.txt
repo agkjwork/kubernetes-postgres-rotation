@@ -1,0 +1,55 @@
+
+
+1) helm chart points to an image (private-api) 
+
+2) private-api image tag upgrades through update to keycloak, vault and schema inside the main.py. So in the main.py, if there are upgrades to the vault from v0 to v2, there will be 3 seperate scripts to upgrade vault from v0 to v1, v1 to v2, v2 to v3. Similarly to the postgres schema and keycloak. 
+
+3) A change in the main.py will equate a change in the private-api image tag 
+
+4) currently, migrations are autoran when pods are destroyed and deployed when image changes after destorying and redeploying the pod through helm chart.
+
+Question
+
+1) Migrations should not run with the deployment, meaning migrations should not be executed as part of deployment but rather through the use of a initContainer or a Job which means 
+
+2) A change in the private-api means a change in the image tag which means a change to the helm chart version
+
+3) If a migration/upgrade to keycloak/vault/schema fails, all the changes should rollback in the db as well as the helm chart version
+
+
+----------------------
+should the upgrades be part of private-api? 
+
+private-api image (deployment)
+service_migration image (job)
+
+
+solution 1 to managing an upgrade to private-api (keycloak,vault,schema):
+1) SA will do a helm install on the helm chart that devs provision
+2) helm will pull private-api image from repository and deploy
+3) private-api pod starts, executes everything in the main.py
+4) private-api pod contains migration scripts that are executed sequentially in the main.py
+5) private-api may have 3 replicas but locks are in place to ensure migrations are only done once per deployment, not per replica
+6) deployed
+--- suppose an upgrade to private-api---
+6) devs will modify main.py directly to update (keycloak/vault/schema)
+7) devs will build and push this image to repository
+8) SA will do "helm upgrade <release-name> ." to upgrade the helm chart and image name for private-api
+--- suppose a fail happens to upgrading of (keycloak/vault/schema)
+9) private api will need to rollback changes that it has made
+10) 
+
+
+
+
+Process
+1) IN prod, all user get is just a helm chart
+2) User will need to manage the helm chart by themselves
+3) The helm chart will just pull the images we pushed and run it 
+4) If developement there are changes to the private api (keycloak,vault,schema), devs will push this image onto repository
+5) SA's role is to modify the helm chart by calling a "helm upgrade <release-name> ." which will upgrade the helm chart
+
+
+
+
+

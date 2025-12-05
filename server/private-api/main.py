@@ -21,13 +21,10 @@ DSN = f"dbname={POSTGRES_DB} user={POSTGRES_USER} password={POSTGRES_PASSWORD} h
 def get_conn():
     return psycopg2.connect(DSN, cursor_factory=psycopg2.extras.DictCursor)
 
-
-
 def acquire_lock(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT pg_advisory_lock(%s)", (ADVISORY_LOCK,))
     conn.commit()
-
 
 def release_lock(conn):
     with conn.cursor() as cur:
@@ -93,7 +90,6 @@ def find_service_version_by_service_name(conn, service_name: str) -> int | None:
         """, (service_name,))
         return cur.fetchone()[0]  # Could be None
    
-
 def update_service_version_by_service_name(conn, service_name: str, service_version: str) -> None:
     with conn.cursor() as cur:
         cur.execute("""
@@ -156,10 +152,10 @@ def upgrade_schema(conn) -> None:
             update_service_version_by_service_name(conn, "schema", "0.1.0")
 
 
-# prevent this from auto starting up 
-@app.on_event("startup")
-async def startup_event():
-
+# this will be called via a job/init container
+# on first deployment, this will be called via init container
+# on subsequent changes, will be called via job
+async def service_upgrade():
     try:
         # create connection
         conn = await run_sync(get_conn)
@@ -173,6 +169,7 @@ async def startup_event():
             await asyncio.sleep(1)
 
         create_service_version_table(conn)
+        await asyncio.sleep(20)
         upgrade_vault(conn)
         upgrade_keycloak(conn)
         upgrade_schema(conn)
@@ -185,4 +182,4 @@ async def startup_event():
 
 @app.on_event("startup")     
 async def startup_event():
-    print(f"OMG WHAT IS HAPPENING")
+    print(f"App has started",flush=True)
